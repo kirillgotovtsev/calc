@@ -1,0 +1,462 @@
+function createAdEfficiencyTable() {
+  const sheetName = "Raw Data";
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  const data = sheet.getDataRange().getValues();
+  const adEfficiencyTableSheet = spreadsheet.insertSheet("Ad Efficiency Table");
+  const channelSheets = {};
+  const summarySheet = spreadsheet.insertSheet("Summary");
+  summarySheet.appendRow(["Creative", "Channel", "Impressions", "Clicks", "CTR", "CPC", "Conversion Rate", "CPA", "ROAS"]);
+
+  data.forEach(function(row, index) {
+    if (index > 0) {
+      const creative = row[0];
+      const channel = row[1];
+      const date = new Date(row[2]);
+      const impressions = row[3];
+      const clicks = row[4];
+      const ctr = row[5];
+      const cpc = row[6];
+      const conversionRate = row[9];
+      const cpa = row[7];
+      const roas = row[8];
+      adEfficiencyTableSheet.appendRow([creative, channel, impressions, clicks, ctr, cpc, conversionRate, cpa, roas]);
+
+      // Create a new sheet for each channel if it doesn't already exist
+      if (!channelSheets[channel]) {
+        const newSheet = spreadsheet.insertSheet(channel);
+        newSheet.appendRow(["Creative", "Date", "Impressions", "Clicks", "CTR", "CPC", "CPA", "ROAS"]);
+        channelSheets[channel] = newSheet;
+      }
+
+      // Add the row to the appropriate channel sheet
+      channelSheets[channel].appendRow([creative, date, impressions, clicks, ctr, cpc, cpa, roas]);
+    }
+  });
+
+  // Create a summary sheet that compares efficiency across all channels
+  const adEfficiencyData = adEfficiencyTableSheet.getDataRange().getValues();
+  const uniqueCreatives = [...new Set(adEfficiencyData.map(row => row[0]))];
+  const uniqueChannels = [...new Set(adEfficiencyData.map(row => row[1]))];
+  uniqueCreatives.forEach(function(creative) {
+    uniqueChannels.forEach(function(channel) {
+      const channelRows = adEfficiencyData.filter(row => row[0] == creative && row[1] == channel);
+      const impressions = channelRows.reduce((total, row) => total + row[2], 0);
+      const clicks = channelRows.reduce((total, row) => total + row[3], 0);
+      const ctr = clicks / impressions;
+      const cpc = channelRows.reduce((total, row) => total + row[5], 0) / clicks;
+      const conversionRate = channelRows.reduce((total, row) => total + row[6], 0) / channelRows.length;
+      const cpa = channelRows.reduce((total, row) => total + row[7], 0) / channelRows.length;
+      const roas = channelRows.reduce((total, row) => total + row[8], 0) / channelRows.length;
+      summarySheet.appendRow([creative, channel, impressions, clicks, ctr, cpc, conversionRate, cpa, roas]);
+    });
+  });
+
+  // Set the format of the data on all sheets
+const allSheets = spreadsheet.getSheets();
+allSheets.forEach(function(sheet) {
+const lastColumn = sheet.getLastColumn();
+sheet.getRange(1, 1, 1, lastColumn).setFontWeight("bold").setBackground("#d9d9d9");
+sheet.autoResizeColumns(1, lastColumn);
+});
+// Set the format of the date column on each channel sheet
+Object.values(channelSheets).forEach(function(channelSheet) {
+    const dateColumn = channelSheet.getDataRange().offset(0, 1, channelSheet.getLastRow() - 1, 1);
+    const dateFormats = dateColumn.getValues().map(function(row) {
+        return [Utilities.formatDate(row[0], "UTC", "MM/dd/yyyy")];
+    });
+    dateColumn.setValues(dateFormats);
+    dateColumn.setHorizontalAlignment("left");
+});
+
+// Set the format of the summary table
+const summaryTableRange = summarySheet.getDataRange();
+const summaryTableStyle = {
+    bold: true,
+    background: "#d9d9d9",
+    horizontalAlignment: "center"
+};
+Object.keys(summaryTableStyle).forEach(function(key) {
+    summaryTableRange.getCell(1, 1).offset(0, summaryTableHeaders.indexOf(key)).setFontWeight(summaryTableStyle.bold)
+    .setBackground(summaryTableStyle.background)
+    .setHorizontalAlignment(summaryTableStyle.horizontalAlignment);
+});
+summarySheet.autoResizeColumns(1, summaryTableHeaders.length);
+
+Logger.log("Ad Efficiency Table created successfully!");
+}
+// Create a custom menu
+function onOpen() {
+SpreadsheetApp.getUi()
+.createMenu('Ad Efficiency')
+.addItem('Update Ad Efficiency Table', 'updateAdEfficiencyTable')
+.addToUi();
+}
+
+// Update the ad efficiency table
+function updateAdEfficiencyTable() {
+const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+const rawDataSheet = spreadsheet.getSheetByName("Raw Data");
+const telegramSheet = spreadsheet.getSheetByName("Telegram");
+const vkontakteSheet = spreadsheet.getSheetByName("VKontakte");
+const contextSheet = spreadsheet.getSheetByName("Context");
+const summarySheet = spreadsheet.getSheetByName("Summary");
+
+// Clear existing data in channel sheets
+telegramSheet.getDataRange().clearContent();
+vkontakteSheet.getDataRange().clearContent();
+contextSheet.getDataRange().clearContent();
+
+// Get raw data and filter by date
+const rawData = rawDataSheet.getDataRange().getValues().filter(function(row) {
+    const date = row[0];
+    return date >= startDate && date <= endDate;
+});
+
+// Calculate efficiency metrics and group by channel and date
+const efficiencyMetrics = {};
+rawData.forEach(function(row) {
+    const date = row[0];
+    const channel = row[1];
+    const impressions = row[2];
+    const clicks = row[3];
+    const conversions = row[4];
+    const spend = row[5];
+    const costPerClick = spend / clicks;
+    const costPerConversion = spend / conversions;
+    const impressionsPerDollar = impressions / spend;
+
+    if (!efficiencyMetrics[channel]) {
+        efficiencyMetrics[channel] = {};
+    }
+    if (!efficiencyMetrics[channel][date]) {
+        efficiencyMetrics[channel][date] = {
+            impressions: 0,
+            clicks: 0,
+            conversions: 0,
+            spend: 0,
+            costPerClick: 0,
+            costPerConversion: 0,
+            impressionsPerDollar: 0
+        };
+    }
+
+    efficiencyMetrics[channel][date].impressions += impressions;
+    efficiencyMetrics[channel][date].clicks += clicks;
+    efficiencyMetrics[channel][date].conversions += conversions;
+    efficiencyMetrics[channel][date].spend += spend;
+    efficiencyMetrics[channel][date].costPerClick += costPerClick;
+    efficiencyMetrics[channel][date].costPerConversion += costPerConversion;
+    efficiencyMetrics[channel][date].impressionsPerDollar += impressionsPerDollar;
+});
+
+// Populate the channel sheets with efficiency metrics
+const channelSheets = {
+    Telegram: telegramSheet,
+    VKontakte: vkontakteSheet,
+    Context: contextSheet
+};
+Object.entries(channelSheets).forEach(function([channelName, channelSheet]) {
+    const channelData = efficiencyMetrics[channelName];
+    Object.entries(channelData).forEach(function([date, metrics]) {
+        const row = [            date,            metrics.impressions,            metrics.clicks,            metrics.conversions,            metrics.spend,            metrics.costPerClick,            metrics.costPerConversion,            metrics.impressionsPerDollar        ];
+        channelSheet.appendRow(row);
+    });
+});
+
+// Populate the summary sheet with efficiency metrics
+
+const summaryTableHeaders = ["Channel", "Impressions", "Clicks", "Conversions", "Spend", "Cost Per Click", "Cost Per Conversion", "Impressions Per Dollar"];
+const summaryTableData = Object.entries(efficiencyMetrics).map(function([channelName, channelData]) {
+    const totalImpressions = Object.values(channelData).reduce(function(sum, metrics) {
+        return sum + metrics.impressions;
+    }, 0);
+    const totalClicks = Object.values(channelData).reduce(function(sum, metrics) {
+        return sum + metrics.clicks;
+    }, 0);
+    const totalConversions = Object.values(channelData).reduce(function(sum, metrics) {
+        return sum + metrics.conversions;
+    }, 0);
+    const totalSpend = Object.values(channelData).reduce(function(sum, metrics) {
+        return sum + metrics.spend;
+    }, 0);
+    const avgCostPerClick = totalSpend / totalClicks;
+    const avgCostPerConversion = totalSpend / totalConversions;
+    const avgImpressionsPerDollar = totalImpressions / totalSpend;
+    return [
+        channelName,
+        totalImpressions,
+        totalClicks,
+        totalConversions,
+        totalSpend,
+        avgCostPerClick,
+        avgCostPerConversion,
+        avgImpressionsPerDollar
+    ];
+});
+summarySheet.clearContents();
+summarySheet.getRange(1, 1, 1, summaryTableHeaders.length).setValues([summaryTableHeaders]);
+summarySheet.getRange(2, 1, summaryTableData.length, summaryTableHeaders.length).setValues(summaryTableData);
+
+
+
+// Format the channel sheets
+Object.values(channelSheets).forEach(function(channelSheet) {
+channelSheet.getRange(1, 1, 1, 8).setFontWeight("bold");
+channelSheet.autoResizeColumns(1, 8);
+});
+// Format the summary sheet
+summarySheet.getRange(1, 1, 1, summaryTableHeaders.length).setFontWeight("bold");
+summarySheet.autoResizeColumns(1, summaryTableHeaders.length);
+}
+// Utility function to get the start and end date of the current week
+function getCurrentWeekDates() {
+const today = new Date();
+const dayOfWeek = today.getDay();
+const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek + 1);
+const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek + 7);
+return {startDate: startDate, endDate: endDate};
+}
+
+// Utility function to get the data for a specific channel and date range
+function getChannelData(channelSheet, startDate, endDate) {
+const rawChannelData = channelSheet.getDataRange().getValues();
+const headers = rawChannelData[0];
+const channelData = {};
+for (let i = 1; i < rawChannelData.length; i++) {
+const row = rawChannelData[i];
+const rowDate = new Date(row[0]);
+if (rowDate >= startDate && rowDate <= endDate) {
+const key = row[1];
+if (!channelData[key]) {
+channelData[key] = {
+impressions: 0,
+clicks: 0,
+conversions: 0,
+spend: 0
+};
+}
+channelData[key].impressions += parseInt(row[2]);
+channelData[key].clicks += parseInt(row[3]);
+channelData[key].conversions += parseInt(row[4]);
+channelData[key].spend += parseFloat(row[5]);
+}
+}
+return channelData;
+}
+
+// Utility function to create a sheet with a given name if it does not already exist
+function createSheetIfNotExists(sheetName) {
+const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+let sheet = spreadsheet.getSheetByName(sheetName);
+if (!sheet) {
+sheet = spreadsheet.insertSheet(sheetName);
+}
+return sheet;
+}
+
+// Utility function to format a date as "YYYY-MM-DD"
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+}
+
+
+// Main function to run the report
+function runReport() {
+const {startDate, endDate} = getCurrentWeekDates();
+
+// Get the raw data sheet and channel sheets
+const rawDataSheetName = "Raw Data";
+const telegramSheetName = "Telegram";
+const vkontakteSheetName = "VKontakte";
+const contextualSheetName = "Contextual Advertising";
+const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+const rawDataSheet = spreadsheet.getSheetByName(rawDataSheetName);
+const telegramSheet = createSheetIfNotExists(telegramSheetName);
+const vkontakteSheet = createSheetIfNotExists(vkontakteSheetName);
+const contextualSheet = createSheetIfNotExists(contextualSheetName);
+
+// Filter and copy the data to the channel sheets
+const rawChannelData = rawDataSheet.getDataRange().getValues();
+const channelSheets = {
+    Telegram: telegramSheet,
+    VKontakte: vkontakteSheet,
+    "Contextual Advertising": contextualSheet
+};
+for (let i = 0; i < rawChannelData.length; i++) {
+    const row = rawChannelData[i];
+    const rowDate = new Date(row[0]);
+    if (rowDate >= startDate && rowDate <= endDate) {
+        const channel = row[1];
+        const channelSheet = channelSheets[channel];
+        const targetRow = channelSheet.getLastRow() + 1;
+        channelSheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+    }
+}
+
+// Format and summarize the data on the channel sheets and summary sheet
+const summarySheetName = "Summary";
+const summarySheet = createSheetIfNotExists(summarySheetName);
+const channelDataByDay = {};
+for (const channelName in channelSheets) {
+    const channelSheet = channelSheets[channelName];
+    const channelData = getChannelData(channelSheet, startDate, endDate);
+    const tableHeaders = ["Date", "Creative", "Impressions", "Clicks", "Conversions", "Spend"];
+    const tableData = [];
+    for (const creativeName in channelData) {
+        const metrics = channelData[creativeName];
+        tableData.push([
+            formatDate(startDate),
+            creativeName,
+            metrics.impressions,
+            metrics.clicks,
+            metrics.conversions,
+            metrics.spend
+        ]);
+    }
+    channelSheet.clearContents();
+    channelSheet.getRange(1, 1, 1, tableHeaders.length).setValues([tableHeaders]);
+    channelSheet.getRange(2, 1, tableData.length, tableHeaders.length).setValues(tableData);
+    channelDataByDay[channelName] = channelData;
+}
+const summaryTableHeaders = ["Channel", "Impressions", "Clicks", "Conversions", "Spend", "Avg. Cost per Click", "Avg. Cost per Conversion", "Avg. Impressions per Dollar"];
+const summaryTableData = Object.entries(channelDataByDay).map(([channelName, channelData]) => {
+const totalImpressions = sumMetrics(channelData, "impressions");
+const totalClicks = sumMetrics(channelData, "clicks");
+const totalConversions = sumMetrics(channelData, "conversions");
+const totalSpend = sumMetrics(channelData, "spend");
+const avgCpc = totalClicks > 0 ? totalSpend / totalClicks : 0;
+const avgCpv = totalConversions > 0 ? totalSpend / totalConversions : 0;
+const avgImpressionsPerDollar = totalSpend > 0 ? totalImpressions / totalSpend : 0;
+return [
+channelName,
+totalImpressions,
+totalClicks,
+totalConversions,
+totalSpend,
+avgCpc,
+avgCpv,
+avgImpressionsPerDollar
+];
+});
+summarySheet.clearContents();
+summarySheet.getRange(1, 1, 1, summaryTableHeaders.length).setValues([summaryTableHeaders]);
+summarySheet.getRange(2, 1, summaryTableData.length, summaryTableHeaders.length).setValues(summaryTableData);
+// Set the format of the data on all sheets
+const allSheets = [rawDataSheet, telegramSheet, vkontakteSheet, contextualSheet, summarySheet];
+for (const sheet of allSheets) {
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, sheet.getLastColumn());
+    sheet.getDataRange().setNumberFormat("#,##0.00");
+}
+}
+/**
+
+Computes the sum of a metric in a channel data object.
+@param {Object} channelData - The channel data object.
+@param {string} metric - The name of the metric to sum.
+@returns {number} - The sum of the metric across all days.
+*/
+function sumMetrics(channelData, metric) {
+return Object.values(channelData).reduce((acc, dayData) => acc + dayData[metric], 0);
+}
+/**
+
+Calculates the metrics for each day in a channel's data.
+@param {Object} channelData - The channel data object.
+@returns {Object} - An object containing the calculated metrics for each day in the channel data.
+*/
+function calculateMetricsByDay(channelData) {
+const days = Object.keys(channelData[Object.keys(channelData)[0]]);
+const metricsByDay = {};
+for (const day of days) {
+metricsByDay[day] = {
+impressions: 0,
+clicks: 0,
+conversions: 0,
+spend: 0,
+cpc: 0,
+cpv: 0,
+impressionsPerDollar: 0
+};
+}
+for (const [_, dayData] of Object.entries(channelData)) {
+for (const [day, metrics] of Object.entries(dayData)) {
+metricsByDay[day].impressions += metrics.impressions;
+metricsByDay[day].clicks += metrics.clicks;
+metricsByDay[day].conversions += metrics.conversions;
+metricsByDay[day].spend += metrics.spend;
+metricsByDay[day].cpc = metrics.clicks > 0 ? metrics.spend / metrics.clicks : 0;
+metricsByDay[day].cpv = metrics.conversions > 0 ? metrics.spend / metrics.conversions : 0;
+metricsByDay[day].impressionsPerDollar = metrics.spend > 0 ? metrics.impressions / metrics.spend : 0;
+}
+}
+return metricsByDay;
+}
+/**
+
+Calculates the metrics for a channel's data grouped by day of the week.
+@param {Object} channelData - The channel data object.
+@returns {Object} - An object containing the calculated metrics grouped by day of the week.
+*/
+function calculateMetricsByDayOfWeek(channelData) {
+const metricsByDay = calculateMetricsByDay(channelData);
+const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const metricsByDayOfWeek = {};
+for (const dayOfWeek of daysOfWeek) {
+metricsByDayOfWeek[dayOfWeek] = {
+impressions: 0,
+clicks: 0,
+conversions: 0,
+spend: 0,
+cpc: 0,
+cpv: 0,
+impressionsPerDollar: 0
+};
+}
+for (const [day, metrics] of Object.entries(metricsByDay)) {
+const date = new Date(day);
+const dayOfWeek = daysOfWeek[date.getDay()];
+metricsByDayOfWeek[dayOfWeek].impressions += metrics.impressions;
+metricsByDayOfWeek[dayOfWeek].clicks += metrics.clicks;
+metricsByDayOfWeek[dayOfWeek].conversions += metrics.conversions;
+metricsByDayOfWeek[dayOfWeek].spend += metrics.spend;
+}
+for (const dayOfWeek of daysOfWeek) {
+metricsByDayOfWeek[dayOfWeek].cpc = metricsByDayOfWeek[dayOfWeek].clicks > 0 ? metricsByDayOfWeek[dayOfWeek].spend /
+// Create a chart for each ad type and channel
+function createCharts(dataSheet, adTypeColumns, channelRows) {
+  var sheet = dataSheet.getParent().getSheetByName("Charts");
+  sheet.clear();
+
+  var dataRange = dataSheet.getDataRange();
+
+  // Create a chart for each combination of ad type and channel
+  var charts = [];
+  for (var adType in adTypeColumns) {
+    for (var channel in channelRows) {
+      var chartBuilder = sheet.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(dataRange)
+        .setPosition(channelRows[channel], adTypeColumns[adType], 0, 0)
+        .setOption("title", adType + " in " + channel)
+        .setOption("vAxis.title", "Impressions")
+        .setOption("hAxis.title", "Day of Week");
+      
+      if (adType == "CTR") {
+        chartBuilder.setOption("vAxis.format", "#%");
+      }
+      
+      var chart = chartBuilder.build();
+      charts.push(chart);
+    }
+  }
+  
+  // Insert the charts into the sheet
+  for (var i = 0; i < charts.length; i++) {
+    sheet.insertChart(charts[i]);
+  }
+}
